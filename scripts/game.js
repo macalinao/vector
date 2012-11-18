@@ -8,25 +8,6 @@ function rgbToHex(r, g, b) {
     return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
 }
 
-function Clouds(game) {
-    this.game = game;
-    this.x = 0;
-    this.y = 50;
-    this.speed = 100;
-}
-
-Clouds.prototype.update = function(delta) {
-    this.x -= this.speed * (delta / 1000);
-    if (this.x < -this.game.canvas.width) {
-        this.x = 0;
-    }
-};
-
-Clouds.prototype.draw = function() {
-    this.game.ctx.drawImage(this.game.assets.images.clouds, this.x, this.y, this.game.canvas.width, this.game.canvas.height / 4);
-    this.game.ctx.drawImage(this.game.assets.images.clouds, this.x + this.game.canvas.width, this.y, this.game.canvas.width, this.game.canvas.height / 4);
-};
-
 function backgroundUpdate(game, delta) {
     // game.globals.clouds.update(delta);
 }
@@ -77,119 +58,90 @@ StateMainMenu.prototype.touchHandlers = [
 function Ship(state) {
     this.state = state;
 
-    this.width = 100;
-    this.height = 100;
+    this.dead = false;
+
+    this.width = 50;
+    this.height = 50;
 
     this.x = 50;
-    this.y = this.state.game.canvas.height - this.height;
+    this.y = (this.state.game.canvas.height - this.height) / 2;
 
-    this.speed = 300;
-    this.health = 10;
+    this.speed = this.state.game.canvas.height * 2.718281828;
+    this.momentum = 0;
 
     this.hurting = false;
     this.doneTime = 0;
 
     this.update = function(delta) {
-        if (this.health <= 0) {
+        if (this.dead) {
             this.state.game.switchState("gameover");
         }
 
-        if (this.state.direction == -1) {
-            if (this.x > 0) {
-                this.x -= this.speed * (delta / 1000);
-            }
+        this.momentum -= this.speed * (delta / 1000) / 2;
+
+        if (this.state.holding) {
+            this.momentum += this.speed * (delta / 1000);
         }
 
-        if (this.state.direction == 1) {
-            if (this.x < this.state.game.canvas.width - this.width) {
-                this.x += this.speed * (delta / 1000);
-            }
-        }
+        this.y -= this.momentum * (delta / 1000);
 
-        if (this.hurting && this.doneTime < Date.now()) {
-            this.hurting = false;
+        if (this.y < 50 || this.y > this.state.game.canvas.height - this.height - 50) {
+            this.dead = true;
         }
     };
 
     this.draw = function() {
         var game = this.state.game;
+        var ctx = game.ctx;
 
-        if (this.hurting) {
-            game.ctx.drawImage(game.assets.images.shiphit, this.x, this.y, this.width, this.height);
-        } else {
-            game.ctx.drawImage(game.assets.images.ship, this.x, this.y, this.width, this.height);
-        }
-    };
+        ctx.strokeStyle = "#00ff00";
 
-    this.drawHealth = function() {
-        var game = this.state.game;
-
-        var healthBarTop = 50;
-
-        var healthBarStart = game.canvas.width / 9;
-        
-        var healthBarFull = game.canvas.width * (7 / 9);
-        var healthBarEnd = healthBarFull * (this.health / 10);
-
-        var healthBarHeight = game.canvas.height / 16;
-
-        game.ctx.fillStyle = "#ff0000";
-        game.ctx.fillRect(healthBarStart, healthBarTop, healthBarFull, healthBarHeight);
-
-        game.ctx.fillStyle = "#00ff00";
-        game.ctx.fillRect(healthBarStart, healthBarTop, healthBarEnd, healthBarHeight);
-    }
-
-    this.hurt = function(laser) {
-        //TODO play sound
-        this.hurting = true;
-        this.doneTime = Date.now() + 200;
-        this.health -= 1;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x + this.width, this.y);
+        ctx.lineTo(this.x + this.width, this.y + this.height);
+        ctx.lineTo(this.x, this.y + this.height);
+        ctx.closePath();
+        ctx.stroke();
     };
 }
 
-function LaserManager(state) {
+function WallManager(state) {
     this.state = state;
     this.lastSpawn = Date.now();
-    this.lasers = [];
+    this.walls = [];
 
-    this.fireLaser = function() {
-        var x = Math.random() * this.state.game.canvas.width - 50;
-        var y = -100;
+    this.spawnWall = function() {
+        var x = this.state.game.canvas.width + 100;
+        var y = Math.random() * this.state.game.canvas.height - 50;
 
         var type = Math.random() * 100;
 
         var width;
         var height;
         var color;
-        var speed;
 
         if (type < 50) {
             color = {r: 255, g: 0, b: 0};
-            speed = 300;
-            width = 10;
+            width = 5;
             height = 50;
         } else if (type < 70) {
             color = {r: 0, g: 255, b: 0};
-            speed = 600;
             width = 20;
             height = 20;
         } else if (type < 90) {
             color = {r: 0, g: 0, b: 255};
-            speed = 20;
-            width = 100;
-            height = 10;
+            width = 10;
+            height = 100;
         } else if (type <= 100) {
             color = {r: 255, g: 255, b: 255};
-            speed = 1000;
-            width = 5;
-            height = 5;
+            width = 200;
+            height = 10;
         }
 
-        this.lasers.push(new Laser(this.state, {
+        this.walls.push(new Wall(this.state, {
             x: x,
             y: y,
-            speed: speed,
             color: color,
             width: width,
             height: height
@@ -197,39 +149,39 @@ function LaserManager(state) {
     };
 
     this.update = function(delta) {
-        // Spawn lasers
+        // Spawn walls
         var now = Date.now();
-        if (now - this.lastSpawn > 1000) {
-            this.fireLaser();
+        if (now - this.lastSpawn > 500) {
+            this.spawnWall();
             this.lastSpawn = now;
         }
 
-        // Update lasers
-        for (var i = 0; i < this.lasers.length; i++) {
-            var laser = this.lasers[i];
-            laser.update(delta);
+        // Update walls
+        for (var i = 0; i < this.walls.length; i++) {
+            var wall = this.walls[i];
+            wall.update(delta);
 
-            // Check for pepper eat
-            if (laser.intersects(this.state.ship)) {
-                this.lasers.splice(i, 1);
-                this.state.ship.hurt(laser);
+            // Check for wall hit
+            if (wall.intersects(this.state.ship)) {
+                this.walls.splice(i, 1);
+                this.state.ship.dead = true;
                 continue;
             }
 
-            if (laser.y > this.state.game.canvas.height) {
-                this.lasers.splice(i, i);
+            if (wall.y > this.state.game.canvas.height) {
+                this.walls.splice(i, i);
             }
         }
     };
 
     this.draw = function() {
-        for (var i = 0; i < this.lasers.length; i++) {
-            this.lasers[i].draw();
+        for (var i = 0; i < this.walls.length; i++) {
+            this.walls[i].draw();
         }
     };
 }
 
-function Laser(state, params) {
+function Wall(state, params) {
     this.state = state;
     this.x = params.x;
     this.y = params.y;
@@ -238,19 +190,19 @@ function Laser(state, params) {
     this.height = params.height;
 
     this.color = rgbToHex(params.color.r, params.color.g, params.color.b);
-    this.speed = params.speed;
+    this.speed = state.game.canvas.width / 5;
 }
 
-Laser.prototype.update = function update(delta) {
-    this.y += this.speed * (delta / 1000);
+Wall.prototype.update = function update(delta) {
+    this.x -= this.speed * (delta / 1000);
 };
 
-Laser.prototype.draw = function draw() {
+Wall.prototype.draw = function draw() {
     this.state.game.ctx.fillStyle = this.color;
     this.state.game.ctx.fillRect(this.x, this.y, this.width, this.height);
 }
 
-Laser.prototype.intersects = function intersects(rect) {
+Wall.prototype.intersects = function intersects(rect) {
     return (this.x <= rect.x + rect.width
         && rect.x <= this.x + this.width
         && this.y <= rect.y + rect.height
@@ -262,58 +214,39 @@ var StateInGame = function StateInGame() {
 
 StateInGame.prototype.enter = function enter() {
     this.ship = new Ship(this);
-    this.laserManager = new LaserManager(this);
+    this.wallManager = new WallManager(this);
     this.game.globals.startTime = Date.now();
 };
 
 StateInGame.prototype.update = function update(delta) {
     backgroundUpdate(this.game, delta);
     this.ship.update(delta);
-    this.laserManager.update(delta);
+    this.wallManager.update(delta);
 };
 
 StateInGame.prototype.render = function render() {
     backgroundRender(this.game);
     this.ship.draw();
-    this.laserManager.draw();
-    this.ship.drawHealth();
+    this.wallManager.draw();
 
     var ctx = this.game.ctx;
 
-    ctx.font = "40px Arial";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText("Time: " + ((Date.now() - this.game.globals.startTime) / 1000), 20, 40);
+    ctx.fillStyle = "#00ff00";
+    ctx.fillRect(0, 0, this.game.canvas.width, 50);
+    ctx.fillRect(0, this.game.canvas.height - 50, this.game.canvas.width, 50);
 
-    // Draw reds
-    for (var i = 0; i < this.reds; i++) {
-        ctx.drawImage(this.game.assets.images.redpepper, this.game.canvas.width - 50 - (i * 50), 5);
-    }
+    ctx.font = "40px Arial";
+    ctx.fillStyle = "#000000";
+    ctx.fillText("Time: " + ((Date.now() - this.game.globals.startTime) / 1000), 20, 40);
 };
 
 StateInGame.prototype.touchHandlers = [
-    function checkLeft(touch) {
-        if (touch.type == 'start' && Engin.Input.inRectBounds(
-            [
-                [0, 0],
-                [screen.width / 2, screen.height]
-            ], touch)) {
-            this.direction = (this.direction == 1) ? 0 : -1;
-        }
-    },
-
-    function checkRight(touch) {
-        if (touch.type == 'start' && Engin.Input.inRectBounds(
-            [
-                [screen.width / 2, 0],
-                [screen.width, screen.height]
-            ], touch)) {
-            this.direction = (this.direction == -1) ? 0 : 1;        }
+    function checkGo(touch) {
+        this.holding = touch.type == 'start';
     },
 
     function checkStop(touch) {
-        if (touch.type == 'end') {
-            this.direction = 0;
-        }
+        this.holding = !(touch.type == 'end');
     }
 ];
 
@@ -355,8 +288,8 @@ document.addEventListener("webworksready", function() {
     var game = new Engin.Game({
         platform: Engin.Platform.WEBWORKS,
         assets: {
-            images: ["title", "ship", "shiphit"],
-            sounds: ["bg", "hit"]
+            images: ["title"],
+            sounds: ["bg"]
         }
     });
 
@@ -369,7 +302,6 @@ document.addEventListener("webworksready", function() {
         ingame: StateInGame,
         gameover: StateGameOver
     });
-    game.globals.clouds = new Clouds(game);
     game.initialize(canvas);
 
     game.start();
