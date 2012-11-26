@@ -6,6 +6,7 @@
           rim:copyright="Copyright 2012 Ian Macalinao">Ian Macalinao</author>
   <name>Vector</name>
   <content src="index.html"/>
+  <icon src="assets/icon86.png"/>
   <feature id="blackberry.identity" required="true" version="1.0.0.0"/>
   <rim:orientation mode="landscape" />
 </widget>
